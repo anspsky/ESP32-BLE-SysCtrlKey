@@ -5,6 +5,7 @@
 #######################################
 
 BleKeyboard	KEYWORD1
+BleSysCtrlKey	KEYWORD1
 
 #######################################
 # Methods and Functions
