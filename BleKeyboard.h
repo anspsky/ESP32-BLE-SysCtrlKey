@@ -119,6 +119,12 @@ const MediaKeyReport KEY_MEDIA_WWW_BACK = {0, 32};
 const MediaKeyReport KEY_MEDIA_CONSUMER_CONTROL_CONFIGURATION = {0, 64}; // Media Selection
 const MediaKeyReport KEY_MEDIA_EMAIL_READER = {0, 128};
 
+typedef enum _SysCtrlKeyReport : uint8_t {
+  KEY_SYSCTRL_NONE = 0x00,
+  KEY_SYSCTRL_POWER = 0x01,
+  KEY_SYSCTRL_SLEEP = 0x02,
+  KEY_SYSCTRL_WAKEUP = 0x04,
+} SysCtrlKeyReport;
 
 //  Low level key report: up to 6 keys and shift, ctrl etc at once
 typedef struct
@@ -135,9 +141,11 @@ private:
   BLECharacteristic* inputKeyboard;
   BLECharacteristic* outputKeyboard;
   BLECharacteristic* inputMediaKeys;
+  BLECharacteristic* inputSysCtrlKeys;
   BLEAdvertising*    advertising;
   KeyReport          _keyReport;
   MediaKeyReport     _mediaKeyReport;
+  SysCtrlKeyReport   _sysCtrlKeyReport;
   std::string        deviceName;
   std::string        deviceManufacturer;
   uint8_t            batteryLevel;
@@ -155,12 +163,16 @@ public:
   void end(void);
   void sendReport(KeyReport* keys);
   void sendReport(MediaKeyReport* keys);
+  void sendReport(SysCtrlKeyReport* keys);
   size_t press(uint8_t k);
   size_t press(const MediaKeyReport k);
+  size_t press(const SysCtrlKeyReport k);
   size_t release(uint8_t k);
   size_t release(const MediaKeyReport k);
+  size_t release(const SysCtrlKeyReport k);
   size_t write(uint8_t c);
   size_t write(const MediaKeyReport c);
+  size_t write(const SysCtrlKeyReport c);
   size_t write(const uint8_t *buffer, size_t size);
   void releaseAll(void);
   bool isConnected(void);

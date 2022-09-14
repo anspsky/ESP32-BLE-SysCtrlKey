@@ -29,6 +29,7 @@
 // Report IDs:
 #define KEYBOARD_ID 0x01
 #define MEDIA_KEYS_ID 0x02
+#define SYSCTRL_KEYS_ID 0x03
 
 static const uint8_t _hidReportDescriptor[] = {
   USAGE_PAGE(1),      0x01,          // USAGE_PAGE (Generic Desktop Ctrls)
@@ -69,7 +70,7 @@ static const uint8_t _hidReportDescriptor[] = {
   USAGE_PAGE(1),      0x0C,          // USAGE_PAGE (Consumer)
   USAGE(1),           0x01,          // USAGE (Consumer Control)
   COLLECTION(1),      0x01,          // COLLECTION (Application)
-  REPORT_ID(1),       MEDIA_KEYS_ID, //   REPORT_ID (3)
+  REPORT_ID(1),       MEDIA_KEYS_ID, //   REPORT_ID (2)
   USAGE_PAGE(1),      0x0C,          //   USAGE_PAGE (Consumer)
   LOGICAL_MINIMUM(1), 0x00,          //   LOGICAL_MINIMUM (0)
   LOGICAL_MAXIMUM(1), 0x01,          //   LOGICAL_MAXIMUM (1)
@@ -92,7 +93,22 @@ static const uint8_t _hidReportDescriptor[] = {
   USAGE(2),           0x83, 0x01,    //   Usage (Media sel)   ; bit 6: 64
   USAGE(2),           0x8A, 0x01,    //   Usage (Mail)        ; bit 7: 128
   HIDINPUT(1),        0x02,          //   INPUT (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-  END_COLLECTION(0)                  // END_COLLECTION
+  END_COLLECTION(0),                  // END_COLLECTION
+  // ------------------------------------------------- System Control Keys
+	USAGE_PAGE(1),      0x01,          // USAGE_PAGE (Generic Desktop)
+  USAGE(1),           0x80,          // USAGE (System Control)
+  COLLECTION(1),      0x01,          // COLLECTION (Application)
+  REPORT_ID(1),     SYSCTRL_KEYS_ID, //   REPORT_ID (3)
+	USAGE_MINIMUM(1),   0x81,          //   USAGE_MINIMUM (System Power Off)
+  USAGE_MAXIMUM(1),   0x83,          //   USAGE_MAXIMUM (System Wake Up)
+  LOGICAL_MINIMUM(1), 0x00,          //   LOGICAL_MINIMUM (0)
+  LOGICAL_MAXIMUM(1), 0x01,          //   LOGICAL_MAXIMUM (1)
+  REPORT_SIZE(1),     0x01,          //   REPORT_SIZE (1)
+  REPORT_COUNT(1),    0x03,          //   REPORT_COUNT (3)
+  HIDINPUT(1),        0x06,          //   INPUT (Data,Var,Rel)
+  REPORT_COUNT(1),    0x05,          //   REPORT_COUNT (5)
+  HIDINPUT(1),        0x06,          //   INPUT (Data,Var,Rel)
+  END_COLLECTION(0),                  // END_COLLECTION
 };
 
 BleKeyboard::BleKeyboard(std::string deviceName, std::string deviceManufacturer, uint8_t batteryLevel) 
@@ -111,6 +127,7 @@ void BleKeyboard::begin(void)
   inputKeyboard = hid->inputReport(KEYBOARD_ID);  // <-- input REPORTID from report map
   outputKeyboard = hid->outputReport(KEYBOARD_ID);
   inputMediaKeys = hid->inputReport(MEDIA_KEYS_ID);
+  inputSysCtrlKeys = hid->inputReport(SYSCTRL_KEYS_ID);
 
   outputKeyboard->setCallbacks(this);
 
@@ -205,6 +222,19 @@ void BleKeyboard::sendReport(MediaKeyReport* keys)
   {
     this->inputMediaKeys->setValue((uint8_t*)keys, sizeof(MediaKeyReport));
     this->inputMediaKeys->notify();
+#if defined(USE_NIMBLE)        
+    //vTaskDelay(delayTicks);
+    this->delay_ms(_delay_ms);
+#endif // USE_NIMBLE
+  }	
+}
+
+void BleKeyboard::sendReport(SysCtrlKeyReport* keys)
+{
+  if (this->isConnected())
+  {
+    this->inputSysCtrlKeys->setValue((uint8_t*)keys, sizeof(SysCtrlKeyReport));
+    this->inputSysCtrlKeys->notify();
 #if defined(USE_NIMBLE)        
     //vTaskDelay(delayTicks);
     this->delay_ms(_delay_ms);
@@ -410,6 +440,16 @@ size_t BleKeyboard::press(const MediaKeyReport k)
 	return 1;
 }
 
+size_t BleKeyboard::press(const SysCtrlKeyReport k)
+{
+	uint8_t k_8 = (uint8_t)k;
+	uint8_t m_8 = (uint8_t)_sysCtrlKeyReport;
+	m_8 |= k_8;
+	_sysCtrlKeyReport = (SysCtrlKeyReport)m_8;
+	sendReport(&_sysCtrlKeyReport);
+	return 1;
+}
+
 // release() takes the specified key out of the persistent key report and
 // sends the report.  This tells the OS the key is no longer pressed and that
 // it shouldn't be repeated any more.
@@ -456,6 +496,16 @@ size_t BleKeyboard::release(const MediaKeyReport k)
 	return 1;
 }
 
+size_t BleKeyboard::release(const SysCtrlKeyReport k)
+{
+	uint8_t k_8 = (uint8_t)k;
+	uint8_t m_8 = (uint8_t)_sysCtrlKeyReport;
+	m_8 &= ~k_8;
+	_sysCtrlKeyReport = (SysCtrlKeyReport)m_8;
+	sendReport(&_sysCtrlKeyReport);
+	return 1;
+}
+
 void BleKeyboard::releaseAll(void)
 {
 	_keyReport.keys[0] = 0;
@@ -465,21 +515,35 @@ void BleKeyboard::releaseAll(void)
 	_keyReport.keys[4] = 0;
 	_keyReport.keys[5] = 0;
 	_keyReport.modifiers = 0;
+	sendReport(&_keyReport);
+	if (_mediaKeyReport[0] || _mediaKeyReport[1]){
     _mediaKeyReport[0] = 0;
     _mediaKeyReport[1] = 0;
-	sendReport(&_keyReport);
+    sendReport(&_mediaKeyReport);
+	}
+	if (_sysCtrlKeyReport){
+    _sysCtrlKeyReport = KEY_SYSCTRL_NONE;
+    sendReport(&_sysCtrlKeyReport);
+	}
 }
 
 size_t BleKeyboard::write(uint8_t c)
 {
-	uint8_t p = press(c);  // Keydown
+	size_t p = press(c);   // Keydown
 	release(c);            // Keyup
 	return p;              // just return the result of press() since release() almost always returns 1
 }
 
 size_t BleKeyboard::write(const MediaKeyReport c)
 {
-	uint16_t p = press(c);  // Keydown
+	size_t p = press(c);   // Keydown
+	release(c);            // Keyup
+	return p;              // just return the result of press() since release() almost always returns 1
+}
+
+size_t BleKeyboard::write(const SysCtrlKeyReport c)
+{
+	size_t p = press(c);   // Keydown
 	release(c);            // Keyup
 	return p;              // just return the result of press() since release() almost always returns 1
 }
